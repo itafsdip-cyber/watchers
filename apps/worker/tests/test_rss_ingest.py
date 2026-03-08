@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from worker_app.database import Base
 from worker_app.main import main
 from worker_app.models import Incident
-from worker_app.rss_ingest import ingest_rss_feeds, parse_rss_items
+from worker_app.rss_ingest import TITLE_MAX_LENGTH, ingest_rss_feeds, parse_rss_items
 
 SAMPLE_RSS = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <rss version=\"2.0\">
@@ -49,6 +49,32 @@ def test_parse_rss_items_extracts_claim_fields() -> None:
     assert claims[0].source_name == "BBC News"
     assert claims[0].source_url == "https://bbc.example/news/1"
     assert claims[0].timestamp == dt.datetime(2024, 9, 4, 10, 0, tzinfo=dt.UTC)
+
+
+def test_parse_rss_items_sanitizes_and_truncates_content() -> None:
+    long_title = "T" * (TITLE_MAX_LENGTH + 20)
+    xml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<rss version=\"2.0\">
+  <channel>
+    <item>
+      <title>  {long_title}  </title>
+      <description>  &lt;p&gt;First line&lt;/p&gt;\n&lt;p&gt;Second &amp;amp; third&lt;/p&gt;  </description>
+      <pubDate>Wed, 04 Sep 2024 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+
+    claims = parse_rss_items(
+        xml,
+        fallback_source_name="https://example.com/fallback",
+        fallback_source_url="https://example.com/fallback",
+    )
+
+    assert len(claims) == 1
+    assert len(claims[0].title) == TITLE_MAX_LENGTH
+    assert claims[0].title == long_title[:TITLE_MAX_LENGTH]
+    assert claims[0].summary == "First line Second & third"
 
 
 def test_ingest_rss_feeds_inserts_and_skips_duplicates(monkeypatch) -> None:

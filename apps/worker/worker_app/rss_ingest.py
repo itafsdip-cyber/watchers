@@ -1,5 +1,7 @@
 import datetime as dt
 import email.utils
+import html
+import re
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -18,6 +20,9 @@ DEFAULT_RSS_FEEDS = (GOOGLE_INCIDENTS_RSS_URL, BBC_WORLD_RSS_URL)
 SIMILARITY_THRESHOLD = 0.9
 DUPLICATE_TIME_WINDOW_HOURS = 6
 REQUEST_TIMEOUT_SECONDS = 10
+TITLE_MAX_LENGTH = 255
+
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -31,6 +36,27 @@ class RSSClaim:
 
 def _normalize(text: str) -> str:
     return " ".join(text.casefold().split())
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _strip_html_tags(text: str) -> str:
+    without_tags = HTML_TAG_RE.sub(" ", text)
+    return html.unescape(without_tags)
+
+
+def _sanitize_title(title: str) -> str:
+    normalized = _normalize_whitespace(title)
+    if not normalized:
+        normalized = "Untitled incident"
+    return normalized[:TITLE_MAX_LENGTH]
+
+
+def _sanitize_summary(summary: str) -> str:
+    cleaned = _normalize_whitespace(_strip_html_tags(summary))
+    return cleaned or "No summary available"
 
 
 def _tag_name(elem: ET.Element) -> str:
@@ -72,8 +98,8 @@ def parse_rss_items(xml_content: str, fallback_source_name: str, fallback_source
 
     claims: list[RSSClaim] = []
     for item in root.findall(".//item"):
-        title = (_get_child_text(item, "title") or "Untitled incident").strip()
-        summary = (_get_child_text(item, "description", "summary") or "No summary available").strip()
+        title = _sanitize_title(_get_child_text(item, "title") or "Untitled incident")
+        summary = _sanitize_summary(_get_child_text(item, "description", "summary") or "No summary available")
         timestamp = _parse_rss_timestamp(_get_child_text(item, "pubDate", "published", "updated"))
 
         source_name = fallback_source_name
