@@ -87,7 +87,8 @@ def test_ingest_rss_feeds_inserts_and_skips_duplicates(monkeypatch) -> None:
     assert result == {"inserted": 1, "skipped": 1, "total": 2}
     assert len(incidents) == 1
     assert incidents[0].credibility_score > 0
-    assert any(entry.event_type == "credibility_scored" for entry in incidents[0].timeline_entries)
+    assert len(incidents[0].sources) == 2
+    assert any(entry.event_type == "additional_source_attached" for entry in incidents[0].timeline_entries)
 
 
 def test_main_ingest_rss_command(monkeypatch) -> None:

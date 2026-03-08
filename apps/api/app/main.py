@@ -1,7 +1,11 @@
 import datetime as dt
+import json
+import time
+from collections.abc import Iterator
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from typing import Optional
@@ -9,7 +13,6 @@ from app.config import settings
 from app.credibility import build_explanation
 from app.database import get_db
 from app.models import Incident, IncidentSource, IncidentTimelineEntry
-from app.schemas import IncidentRead
 from app.providers import get_provider_registry
 from app.schemas import CredibilityExplanation, HealthRead, IncidentDetailRead, IncidentRead
 
@@ -50,6 +53,36 @@ def list_incidents(
 
     incidents = query.order_by(Incident.occurred_at.desc(), Incident.id.desc()).all()
     return incidents
+
+
+def _incident_updates_stream(db: Session) -> Iterator[str]:
+    last_seen: dt.datetime | None = None
+
+    while True:
+        db.expire_all()
+        latest_incident = db.scalar(select(Incident).order_by(Incident.updated_at.desc(), Incident.id.desc()).limit(1))
+        if latest_incident is not None:
+            current_updated_at = latest_incident.updated_at
+            if last_seen is None:
+                last_seen = current_updated_at
+                payload = {"event": "connected", "updated_at": current_updated_at.isoformat()}
+                yield f"event: connected\ndata: {json.dumps(payload)}\n\n"
+            elif current_updated_at > last_seen:
+                last_seen = current_updated_at
+                payload = {
+                    "event": "incident_changed",
+                    "incident_id": latest_incident.id,
+                    "updated_at": current_updated_at.isoformat(),
+                }
+                yield f"event: incident_changed\ndata: {json.dumps(payload)}\n\n"
+
+        yield ": keepalive\n\n"
+        time.sleep(1)
+
+
+@app.get("/incidents/stream")
+def stream_incident_updates(db: Session = Depends(get_db)) -> StreamingResponse:
+    return StreamingResponse(_incident_updates_stream(db), media_type="text/event-stream")
 
 
 @app.get("/incidents/{incident_id}", response_model=IncidentDetailRead)

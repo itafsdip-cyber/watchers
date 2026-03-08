@@ -5,11 +5,11 @@ import re
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from worker_app.deduplication import find_duplicate_incident
 from worker_app.models import Incident, IncidentSource, IncidentTimelineEntry, SourceProfile
 from worker_app.scoring import score_claim
 
@@ -17,8 +17,6 @@ GOOGLE_INCIDENTS_RSS_URL = "https://news.google.com/rss/search?q=incident"
 BBC_WORLD_RSS_URL = "https://feeds.bbci.co.uk/news/world/rss.xml"
 DEFAULT_RSS_FEEDS = (GOOGLE_INCIDENTS_RSS_URL, BBC_WORLD_RSS_URL)
 
-SIMILARITY_THRESHOLD = 0.9
-DUPLICATE_TIME_WINDOW_HOURS = 6
 REQUEST_TIMEOUT_SECONDS = 10
 TITLE_MAX_LENGTH = 255
 
@@ -32,10 +30,6 @@ class RSSClaim:
     source_name: str
     source_url: str | None
     timestamp: dt.datetime
-
-
-def _normalize(text: str) -> str:
-    return " ".join(text.casefold().split())
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -151,33 +145,6 @@ def _upsert_source_profile(db: Session, source_name: str, reliability: float) ->
     profile.reliability_baseline = round((profile.reliability_baseline + reliability) / 2, 3)
 
 
-def is_duplicate_incident(
-    db: Session,
-    title: str,
-    occurred_at: dt.datetime,
-    similarity_threshold: float = SIMILARITY_THRESHOLD,
-    time_window_hours: int = DUPLICATE_TIME_WINDOW_HOURS,
-) -> bool:
-    window_start = occurred_at - dt.timedelta(hours=time_window_hours)
-    window_end = occurred_at + dt.timedelta(hours=time_window_hours)
-
-    nearby_incidents = db.scalars(
-        select(Incident).where(Incident.occurred_at >= window_start, Incident.occurred_at <= window_end)
-    ).all()
-    for pending in db.new:
-        if isinstance(pending, Incident) and pending.occurred_at is not None and window_start <= pending.occurred_at <= window_end:
-            nearby_incidents.append(pending)
-
-    normalized_title = _normalize(title)
-
-    for incident in nearby_incidents:
-        similarity = SequenceMatcher(None, normalized_title, _normalize(incident.title)).ratio()
-        if similarity >= similarity_threshold:
-            return True
-
-    return False
-
-
 def _reliability_for_source(source_name: str) -> float:
     if "bbc" in source_name.casefold():
         return 0.8
@@ -245,7 +212,35 @@ def ingest_rss_feeds(db: Session, feed_urls: tuple[str, ...] = DEFAULT_RSS_FEEDS
     skipped = 0
 
     for claim in parsed_claims:
-        if is_duplicate_incident(db, title=claim.title, occurred_at=claim.timestamp):
+        duplicate = find_duplicate_incident(
+            db,
+            title=claim.title,
+            occurred_at=claim.timestamp,
+            source_url=claim.source_url,
+        )
+        if duplicate is not None:
+            reliability = _reliability_for_source(claim.source_name)
+            duplicate.incident.sources.append(
+                IncidentSource(
+                    source_name=claim.source_name,
+                    source_url=claim.source_url,
+                    source_type="rss",
+                    reliability_score=reliability,
+                    captured_at=dt.datetime.now(dt.UTC),
+                )
+            )
+            duplicate.incident.timeline_entries.append(
+                IncidentTimelineEntry(
+                    event_type="additional_source_attached",
+                    description=(
+                        f"Attached additional source '{claim.source_name}' via duplicate merge "
+                        f"({duplicate.reason})."
+                    ),
+                    timestamp=dt.datetime.now(dt.UTC),
+                )
+            )
+            duplicate.incident.updated_at = dt.datetime.now(dt.UTC)
+            _upsert_source_profile(db, source_name=claim.source_name, reliability=reliability)
             skipped += 1
             continue
 
