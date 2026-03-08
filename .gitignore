@@ -30,3 +30,9 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+.DS_Store
+.env
+apps/api/.venv/
+apps/worker/.venv/
+apps/web/node_modules/
+apps/web/.next/

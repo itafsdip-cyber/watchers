@@ -39,3 +39,13 @@ Phase 1 scaffolds local infra, env defaults, and service directories.
 cp .env.example .env
 make up
 ```
+## Quick Start
+
+### API
+```bash
+cd apps/api
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
