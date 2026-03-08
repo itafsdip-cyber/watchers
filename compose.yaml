@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: watchers-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-watchers}
+      POSTGRES_USER: ${POSTGRES_USER:-watchers}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watchers}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - watchers_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-watchers}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: watchers-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - watchers_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    profiles: ["app"]
+    build:
+      context: ./apps/api
+    container_name: watchers-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-watchers}:${POSTGRES_PASSWORD:-watchers}@postgres:5432/${POSTGRES_DB:-watchers}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: ./apps/worker
+    container_name: watchers-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-watchers}:${POSTGRES_PASSWORD:-watchers}@postgres:5432/${POSTGRES_DB:-watchers}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    profiles: ["app"]
+    build:
+      context: ./apps/web
+    container_name: watchers-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  watchers_pg_data:
+  watchers_redis_data:

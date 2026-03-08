@@ -1,0 +1,98 @@
+[
+  {
+    "claim_id": "claim-001",
+    "title": "Port traffic slowdown after reported outage",
+    "summary": "Open transportation channels and local operators report reduced movement near the main cargo corridor.",
+    "reported_at": "2026-03-08T07:10:00Z",
+    "location": { "lat": 25.2744, "lon": 55.2962 },
+    "independent_reports": 3,
+    "evidence_count": 4,
+    "cross_platform_hits": 3,
+    "temporal_consistency": 0.74,
+    "geographic_consistency": 0.8,
+    "historical_source_accuracy": 0.72,
+    "contradiction_signals": 0.05,
+    "manipulation_signals": 0.02,
+    "sources": [
+      {
+        "name": "Regional News Wire",
+        "url": "https://example.org/news/port-traffic",
+        "type": "news",
+        "reliability": 0.78
+      },
+      {
+        "name": "Open Marine Feed",
+        "url": "https://example.org/feed/marine",
+        "type": "open_feed",
+        "reliability": 0.67
+      }
+    ],
+    "timeline": [
+      {
+        "event_type": "corroboration",
+        "description": "Independent observer posts align with shipping board updates.",
+        "timestamp": "2026-03-08T07:28:00Z"
+      }
+    ]
+  },
+  {
+    "claim_id": "claim-002",
+    "title": "Substation fire rumor in industrial zone",
+    "summary": "Single-channel posts claim a fire event, but no confirmed emergency record yet.",
+    "reported_at": "2026-03-08T08:00:00Z",
+    "location": { "lat": 25.2048, "lon": 55.2708 },
+    "independent_reports": 1,
+    "evidence_count": 1,
+    "cross_platform_hits": 1,
+    "temporal_consistency": 0.45,
+    "geographic_consistency": 0.5,
+    "historical_source_accuracy": 0.4,
+    "contradiction_signals": 0.18,
+    "manipulation_signals": 0.12,
+    "sources": [
+      {
+        "name": "Unverified Social Channel",
+        "url": "https://example.org/post/123",
+        "type": "social",
+        "reliability": 0.34
+      }
+    ],
+    "timeline": []
+  },
+  {
+    "claim_id": "claim-003",
+    "title": "Transit disruption notice later disputed",
+    "summary": "Initial reports indicated full station closure, then official channels denied complete shutdown.",
+    "reported_at": "2026-03-08T08:35:00Z",
+    "location": { "lat": 25.1972, "lon": 55.2744 },
+    "independent_reports": 2,
+    "evidence_count": 2,
+    "cross_platform_hits": 2,
+    "temporal_consistency": 0.52,
+    "geographic_consistency": 0.66,
+    "historical_source_accuracy": 0.58,
+    "contradiction_signals": 0.48,
+    "manipulation_signals": 0.09,
+    "sources": [
+      {
+        "name": "City Transit Bulletin",
+        "url": "https://example.org/transit/bulletin",
+        "type": "bulletin",
+        "reliability": 0.65
+      },
+      {
+        "name": "Commuter Open Forum",
+        "url": "https://example.org/forum/transit",
+        "type": "forum",
+        "reliability": 0.43
+      }
+    ],
+    "timeline": [
+      {
+        "event_type": "dispute",
+        "description": "Follow-up from official account rejects full closure claim.",
+        "timestamp": "2026-03-08T09:00:00Z"
+      }
+    ]
+  }
+]
