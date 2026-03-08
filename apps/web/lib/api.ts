@@ -26,3 +26,7 @@ export async function getIncident(id: number): Promise<IncidentDetail> {
 export async function getCredibility(id: number): Promise<CredibilityExplanation> {
   return apiFetch<CredibilityExplanation>(`/incidents/${id}/credibility`);
 }
+
+export function getIncidentStreamUrl(): string {
+  return `${API_BASE_URL}/incidents/stream`;
+}
