@@ -3,18 +3,30 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { getIncidents, getIncidentStreamUrl } from '@/lib/api';
-import { Incident } from '@/lib/types';
+import { Incident, IngestionStats } from '@/lib/types';
 import { IncidentMap } from './IncidentMap';
 import { LiveIncidentFeed } from './LiveIncidentFeed';
 
-export function DashboardClient({ initialIncidents }: { initialIncidents: Incident[] }) {
+export function DashboardClient({
+  initialIncidents,
+  initialIngestionStats
+}: {
+  initialIncidents: Incident[];
+  initialIngestionStats: IngestionStats;
+}) {
   const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
+  const [ingestionStats, setIngestionStats] = useState<IngestionStats>(initialIngestionStats);
 
   useEffect(() => {
     const eventSource = new EventSource(getIncidentStreamUrl());
     const refresh = async () => {
       const next = await getIncidents();
       setIncidents(next);
+      setIngestionStats((current) => ({
+        ...current,
+        total_incidents: next.length,
+        latest_ingest_run_timestamp: next[0]?.updated_at ?? current.latest_ingest_run_timestamp
+      }));
     };
 
     eventSource.addEventListener('incident_changed', () => {
@@ -31,6 +43,8 @@ export function DashboardClient({ initialIncidents }: { initialIncidents: Incide
     () => incidents.filter((i) => ['confirmed', 'officially_confirmed'].includes(i.status)).length,
     [incidents]
   );
+
+  const ingestHealth = ingestionStats.latest_ingest_run_timestamp ? 'ok' : 'stale';
 
   return (
     <>
@@ -66,9 +80,33 @@ export function DashboardClient({ initialIncidents }: { initialIncidents: Incide
           <IncidentMap incidents={geoIncidents} />
         </div>
 
-        <aside className="rounded-2xl border border-white/10 bg-panel/80 p-4">
-          <h2 className="mb-3 [font-family:var(--font-heading)] text-xl font-semibold">Live Feed</h2>
-          <LiveIncidentFeed incidents={incidents} />
+        <aside className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-panel/80 p-4">
+            <h2 className="mb-3 [font-family:var(--font-heading)] text-xl font-semibold">Live Feed</h2>
+            <LiveIncidentFeed incidents={incidents} />
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-panel/80 p-4">
+            <h2 className="mb-3 [font-family:var(--font-heading)] text-xl font-semibold">Ingestion</h2>
+            <div className="space-y-2 text-sm">
+              <p className="flex items-center justify-between">
+                <span className="text-mute">Health</span>
+                <span className="font-semibold uppercase">{ingestHealth}</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-mute">Duplicate merges today</span>
+                <span className="font-semibold">{ingestionStats.duplicate_claims_merged_today}</span>
+              </p>
+              <p className="flex items-center justify-between">
+                <span className="text-mute">Latest update</span>
+                <span className="font-semibold">
+                  {ingestionStats.latest_ingest_run_timestamp
+                    ? new Date(ingestionStats.latest_ingest_run_timestamp).toLocaleString()
+                    : 'N/A'}
+                </span>
+              </p>
+            </div>
+          </div>
         </aside>
       </section>
     </>

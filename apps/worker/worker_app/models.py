@@ -59,3 +59,16 @@ class SourceProfile(Base):
     historical_accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     reliability_baseline: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: dt.datetime.now(dt.UTC), onupdate=lambda: dt.datetime.now(dt.UTC))
+
+
+class IngestRun(Base):
+    __tablename__ = "ingest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="rss")
+    dry_run: Mapped[bool] = mapped_column(default=False, nullable=False)
+    total_claims: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicates_merged: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: dt.datetime.now(dt.UTC))
+    completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: dt.datetime.now(dt.UTC))

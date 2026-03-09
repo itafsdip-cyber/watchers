@@ -37,3 +37,11 @@ export type CredibilityExplanation = {
   dimensions: Record<string, number>;
   notes: string[];
 };
+
+
+export type IngestionStats = {
+  total_incidents: number;
+  incidents_created_today: number;
+  duplicate_claims_merged_today: number;
+  latest_ingest_run_timestamp: string | null;
+};

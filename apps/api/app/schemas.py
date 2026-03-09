@@ -52,3 +52,10 @@ class CredibilityExplanation(BaseModel):
 class HealthRead(BaseModel):
     status: str
     app_env: str
+
+
+class IngestionStatsRead(BaseModel):
+    total_incidents: int
+    incidents_created_today: int
+    duplicate_claims_merged_today: int
+    latest_ingest_run_timestamp: dt.datetime | None
