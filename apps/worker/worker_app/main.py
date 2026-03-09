@@ -15,9 +15,9 @@ def run_ingest(file_path: str) -> int:
     return 0
 
 
-def run_ingest_rss() -> int:
+def run_ingest_rss(*, dry_run: bool = False) -> int:
     with SessionLocal() as db:
-        result = ingest_rss_feeds(db)
+        result = ingest_rss_feeds(db, dry_run=dry_run)
     print(json.dumps(result, indent=2))
     return 0
 
@@ -30,6 +30,7 @@ def main() -> int:
     ingest_cmd.add_argument("--file", default=settings.sample_claims_path, help="Path to raw claims JSON file")
 
     subparsers.add_parser("ingest-rss", help="Ingest live claims from configured RSS feeds")
+    subparsers.add_parser("dry-run-rss", help="Fetch and parse RSS feeds without writing to the DB")
 
     args = parser.parse_args()
 
@@ -37,6 +38,8 @@ def main() -> int:
         return run_ingest(file_path=args.file)
     if args.command == "ingest-rss":
         return run_ingest_rss()
+    if args.command == "dry-run-rss":
+        return run_ingest_rss(dry_run=True)
 
     parser.print_help()
     return 1

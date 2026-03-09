@@ -96,3 +96,21 @@ def test_main_ingest_rss_command(monkeypatch) -> None:
     monkeypatch.setattr("sys.argv", ["worker", "ingest-rss"])
 
     assert main() == 0
+
+
+def test_ingest_rss_feeds_dry_run_does_not_write(monkeypatch) -> None:
+    db = _session()
+    monkeypatch.setattr("worker_app.rss_ingest.fetch_rss_content", lambda _: SAMPLE_RSS)
+
+    result = ingest_rss_feeds(db, feed_urls=("https://example.com/rss",), dry_run=True)
+
+    incidents = db.scalars(select(Incident)).all()
+    assert result == {"inserted": 1, "skipped": 1, "total": 2}
+    assert incidents == []
+
+
+def test_main_dry_run_rss_command(monkeypatch) -> None:
+    monkeypatch.setattr("worker_app.main.run_ingest_rss", lambda dry_run=False: 0 if dry_run else 1)
+    monkeypatch.setattr("sys.argv", ["worker", "dry-run-rss"])
+
+    assert main() == 0

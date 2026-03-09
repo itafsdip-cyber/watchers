@@ -1,6 +1,8 @@
 import datetime as dt
 import email.utils
 import html
+import json
+import logging
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -10,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from worker_app.deduplication import find_duplicate_incident
-from worker_app.models import Incident, IncidentSource, IncidentTimelineEntry, SourceProfile
+from worker_app.models import Incident, IncidentSource, IncidentTimelineEntry, IngestRun, SourceProfile
 from worker_app.scoring import score_claim
 
 GOOGLE_INCIDENTS_RSS_URL = "https://news.google.com/rss/search?q=incident"
@@ -21,6 +23,7 @@ REQUEST_TIMEOUT_SECONDS = 10
 TITLE_MAX_LENGTH = 255
 
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,6 +33,10 @@ class RSSClaim:
     source_name: str
     source_url: str | None
     timestamp: dt.datetime
+
+
+def _log_structured(event: str, **payload: object) -> None:
+    logger.info(json.dumps({"event": event, **payload}, default=str))
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -202,11 +209,14 @@ def claim_to_incident(db: Session, claim: RSSClaim) -> Incident:
     return incident
 
 
-def ingest_rss_feeds(db: Session, feed_urls: tuple[str, ...] = DEFAULT_RSS_FEEDS) -> dict[str, int]:
+def ingest_rss_feeds(db: Session, feed_urls: tuple[str, ...] = DEFAULT_RSS_FEEDS, *, dry_run: bool = False) -> dict[str, int]:
+    run_started_at = dt.datetime.now(dt.UTC)
     parsed_claims: list[RSSClaim] = []
     for feed_url in feed_urls:
         xml_content = fetch_rss_content(feed_url)
-        parsed_claims.extend(parse_rss_items(xml_content, fallback_source_name=feed_url, fallback_source_url=feed_url))
+        feed_claims = parse_rss_items(xml_content, fallback_source_name=feed_url, fallback_source_url=feed_url)
+        parsed_claims.extend(feed_claims)
+        _log_structured("rss_feed_parsed", feed_url=feed_url, claim_count=len(feed_claims), dry_run=dry_run)
 
     inserted = 0
     skipped = 0
@@ -219,6 +229,13 @@ def ingest_rss_feeds(db: Session, feed_urls: tuple[str, ...] = DEFAULT_RSS_FEEDS
             source_url=claim.source_url,
         )
         if duplicate is not None:
+            _log_structured(
+                "rss_claim_deduplicated",
+                title=claim.title,
+                source_url=claim.source_url,
+                reason=duplicate.reason,
+                dry_run=dry_run,
+            )
             reliability = _reliability_for_source(claim.source_name)
             duplicate.incident.sources.append(
                 IncidentSource(
@@ -244,9 +261,28 @@ def ingest_rss_feeds(db: Session, feed_urls: tuple[str, ...] = DEFAULT_RSS_FEEDS
             skipped += 1
             continue
 
+        _log_structured("rss_claim_new_incident", title=claim.title, source_url=claim.source_url, dry_run=dry_run)
         db.add(claim_to_incident(db, claim))
         inserted += 1
 
-    db.commit()
+    run_completed_at = dt.datetime.now(dt.UTC)
+    run_result = {"inserted": inserted, "skipped": skipped, "total": len(parsed_claims)}
 
-    return {"inserted": inserted, "skipped": skipped, "total": len(parsed_claims)}
+    if dry_run:
+        db.rollback()
+    else:
+        db.add(
+            IngestRun(
+                source="rss",
+                dry_run=False,
+                total_claims=run_result["total"],
+                inserted=inserted,
+                duplicates_merged=skipped,
+                started_at=run_started_at,
+                completed_at=run_completed_at,
+            )
+        )
+        db.commit()
+
+    _log_structured("rss_ingest_run_completed", **run_result, dry_run=dry_run, completed_at=run_completed_at.isoformat())
+    return run_result

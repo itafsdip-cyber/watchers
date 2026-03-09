@@ -1,23 +1,33 @@
 import datetime as dt
 import json
+import logging
 import time
 from collections.abc import Iterator
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
-from typing import Optional
+
 from app.config import settings
 from app.credibility import build_explanation
 from app.database import get_db
-from app.models import Incident, IncidentSource, IncidentTimelineEntry
+from app.models import Incident, IncidentSource, IncidentTimelineEntry, IngestRun
 from app.providers import get_provider_registry
-from app.schemas import CredibilityExplanation, HealthRead, IncidentDetailRead, IncidentRead
+from app.schemas import (
+    CredibilityExplanation,
+    HealthRead,
+    IncidentDetailRead,
+    IncidentRead,
+    IngestionStatsRead,
+)
 
 app = FastAPI(title=settings.app_name)
 provider_registry = get_provider_registry()
+logger = logging.getLogger(__name__)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +36,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.get("/health", response_model=HealthRead)
 def health() -> HealthRead:
@@ -55,6 +66,32 @@ def list_incidents(
     return incidents
 
 
+@app.get("/ingestion/stats", response_model=IngestionStatsRead)
+def ingestion_stats(db: Session = Depends(get_db)) -> IngestionStatsRead:
+    now_utc = dt.datetime.now(dt.UTC)
+    start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    total_incidents = db.scalar(select(func.count(Incident.id))) or 0
+    incidents_created_today = db.scalar(select(func.count(Incident.id)).where(Incident.created_at >= start_of_day)) or 0
+    duplicate_claims_merged_today = (
+        db.scalar(
+            select(func.count(IncidentTimelineEntry.id)).where(
+                IncidentTimelineEntry.event_type == "additional_source_attached",
+                IncidentTimelineEntry.timestamp >= start_of_day,
+            )
+        )
+        or 0
+    )
+    latest_ingest_run_timestamp = db.scalar(select(func.max(IngestRun.completed_at)).where(IngestRun.source == "rss"))
+
+    return IngestionStatsRead(
+        total_incidents=int(total_incidents),
+        incidents_created_today=int(incidents_created_today),
+        duplicate_claims_merged_today=int(duplicate_claims_merged_today),
+        latest_ingest_run_timestamp=latest_ingest_run_timestamp,
+    )
+
+
 def _incident_updates_stream(db: Session) -> Iterator[str]:
     last_seen: dt.datetime | None = None
 
@@ -66,6 +103,7 @@ def _incident_updates_stream(db: Session) -> Iterator[str]:
             if last_seen is None:
                 last_seen = current_updated_at
                 payload = {"event": "connected", "updated_at": current_updated_at.isoformat()}
+                logger.info(json.dumps({"event": "incident_stream_connected", **payload}))
                 yield f"event: connected\ndata: {json.dumps(payload)}\n\n"
             elif current_updated_at > last_seen:
                 last_seen = current_updated_at
@@ -74,6 +112,7 @@ def _incident_updates_stream(db: Session) -> Iterator[str]:
                     "incident_id": latest_incident.id,
                     "updated_at": current_updated_at.isoformat(),
                 }
+                logger.info(json.dumps({"event": "incident_stream_incident_changed", **payload}))
                 yield f"event: incident_changed\ndata: {json.dumps(payload)}\n\n"
 
         yield ": keepalive\n\n"

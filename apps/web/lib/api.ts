@@ -1,4 +1,4 @@
-import { CredibilityExplanation, Incident, IncidentDetail } from './types';
+import { CredibilityExplanation, Incident, IncidentDetail, IngestionStats } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -29,4 +29,9 @@ export async function getCredibility(id: number): Promise<CredibilityExplanation
 
 export function getIncidentStreamUrl(): string {
   return `${API_BASE_URL}/incidents/stream`;
+}
+
+
+export async function getIngestionStats(): Promise<IngestionStats> {
+  return apiFetch<IngestionStats>('/ingestion/stats');
 }
